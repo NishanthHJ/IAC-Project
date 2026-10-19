@@ -1,0 +1,100 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'terraformAction',
+            choices: ['apply', 'destroy'],
+            description: 'Choose your Terraform action'
+        )
+    }
+
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/NishanthHJ/IAC-Project.git'
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                dir('.') {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            when {
+                expression {
+                    return params.terraformAction == 'apply'
+                }
+            }
+            steps {
+                sh 'terraform plan -out=tfplan'
+                sh 'terraform show -no-color tfplan > tfplan.txt'
+            }
+        }
+
+        stage('Approval') {
+            steps {
+                script {
+                    if (params.terraformAction == 'apply') {
+                        def plan = readFile('tfplan.txt')
+
+                        input(
+                            message: 'Review the Terraform plan. Do you want to apply it?',
+                            ok: 'Approve Apply',
+                            parameters: [
+                                text(
+                                    name: 'Terraform Plan',
+                                    description: 'Review the proposed changes',
+                                    defaultValue: plan
+                                )
+                            ]
+                        )
+                    } else {
+                        input(
+                            message: 'WARNING: This will destroy Terraform-managed resources. Continue?',
+                            ok: 'Approve Destroy'
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('Apply or Destroy') {
+            steps {
+                script {
+                    if (params.terraformAction == 'apply') {
+                        sh 'terraform apply -input=false tfplan'
+                    } else {
+                        sh 'terraform destroy -auto-approve'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Terraform pipeline completed successfully.'
+        }
+
+        failure {
+            echo 'Terraform pipeline failed. Check the console output.'
+        }
+
+        always {
+            echo 'Terraform pipeline execution finished.'
+        }
+    }
+}
+```
