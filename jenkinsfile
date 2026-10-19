@@ -25,16 +25,14 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                dir('.') {
-                    sh 'terraform init'
-                }
+                sh 'terraform init'
             }
         }
 
         stage('Terraform Plan') {
             when {
                 expression {
-                    return params.terraformAction == 'apply'
+                    params.terraformAction == 'apply'
                 }
             }
             steps {
@@ -79,6 +77,22 @@ pipeline {
                         sh 'terraform destroy -auto-approve'
                     }
                 }
+            }
+        }
+
+        stage('Backup-Stage') {
+            steps {
+                sh '''
+                    set -eu
+                    echo "Checking Terraform state..."
+                    test -f terraform.tfstate
+
+                    echo "Uploading state backup to S3..."
+                    aws s3 cp terraform.tfstate \
+                        s3://eks-chatbot/Chatbot/terraform.tfstate
+
+                    echo "Terraform state backup completed."
+                '''
             }
         }
     }
